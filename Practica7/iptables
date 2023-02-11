@@ -1,0 +1,39 @@
+#!/bin/sh 
+# ----------------------
+# IPTABLES script
+# ----------------------
+
+#1) Esto es un FLUSH de reglas, 'limpia' las reglas que se puedan encontrar ya escritas para partir de cero, esto es elemental.
+iptables −F
+iptables −X
+iptables −Z 
+iptables −t nat −F 
+	
+#2)Establece nuestras Politicas por Defecto, en este caso es restrictivo puesto que por defecto todo trafico se rechaza (incluyendo al Router).
+#Esto quiere decir que, cualquier trafico que no entre por alguna de las reglas que se escriban posteriormente será rechazado.
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
+iptables −t nat −P PREROUTING DROP 
+iptables −t nat −P POSTROUTING DROP 
+
+#3)Se agregan estas reglas en la tabla nat que son utilizadas para modificar, de los paquetes que entran por eth0, la ip de destino a 192.168.3.2 con  
+#sus respectivos puertos, en los casos donde el puerto sea el 80 (protocolo HTTP) o bien el 443 (protocolo HTTPS), realizando esto antes de ser enrutado el paquete
+iptables −t nat −A PREROUTING −i eth0 −p tcp −−dport 80 −j DNAT −−to 192.168.3.2:80 
+iptables −t nat −A PREROUTING −i eth0 −p tcp −−dport 443 −j DNAT −−to 192.168.3.2:443 
+
+#4)Se agrega una regla que permite (ACCEPT) la entrada de paquetes que vengan de las ips 192.168.10.0/24 a traves de la interfaz de red eth1 
+iptables −A INPUT −s 192.168.10.0/24 −i eth1 −j ACCEPT 
+
+#5)Estas reglas hacen NAT (proprocionan ip pública de forma dinamica) si la ip origen es una de las ips 192.168.10.0/24 o 192.168.3.0/24 y sale por eth0 
+iptables −t nat −A POSTROUTING −s 192.168.10.0/24 −o eth0 −j MASQUERADE 
+iptables −t nat −A POSTROUTING −s 192.168.3.0/24 −o eth0 −j MASQUERADE 
+
+#6)Esta sentencia activa el IP Forwarding, para que el equipo permita que pasen paquetes de una interfaz de red a otra
+echo 1 > /proc/sys/net/ipv4/ip_forward 
+
+
+#7)Se agregan dos reglas a la tabla filter, la primera establece el reenvio (forwarding) de paquetes que entren por la interfaz de red eth1 con estado NEW,
+#ESTABLISHED O RELATED a traves de eth2, y la siguiente establece el reenvio de lo que entra por eth2 con estado ESTABLISHED O RELATED a traves de eth1  
+iptables -t filter -A FORWARD -i eth1 -o eth2 -m state –state NEW,ESTABLISHED,RELATED -j ACCEPT
+iptables -t filter -A FORWARD -i eth2 -o eth1 -m state –state ESTABLISHED,RELATED -j ACCEPT
